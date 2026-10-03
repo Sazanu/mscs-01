@@ -1,0 +1,36 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function userProfile() {
+      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function sameSchool(schoolId) {
+      return signedIn() && userProfile().schoolId == schoolId && userProfile().active == true;
+    }
+
+    function isAdmin() {
+      return sameSchool(schoolId) && (userProfile().role == 'superAdmin' || userProfile().role == 'admin');
+    }
+
+    function isTeacher() {
+      return sameSchool(schoolId) && userProfile().role == 'teacher';
+    }
+
+    match /schools/{schoolId}/{allPaths=**} {
+      allow read: if isAdmin() || isTeacher();
+      allow write: if isAdmin()
+        && request.resource.size < 10 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*|application/pdf');
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

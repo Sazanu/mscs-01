@@ -1,0 +1,380 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ─── Helpers ──────────────────────────────────────────────
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function emailVerified() {
+      return signedIn() && request.auth.token.email_verified == true;
+    }
+
+    function userProfile() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function sameSchool(schoolId) {
+      return signedIn()
+        && userProfile().schoolId == schoolId
+        && userProfile().active == true;
+    }
+
+    function hasRole(role) {
+      return signedIn()
+        && userProfile().role == role
+        && userProfile().active == true;
+    }
+
+    function isAdmin() {
+      return hasRole('superAdmin') || hasRole('admin');
+    }
+
+    function isSuperAdmin() {
+      return hasRole('superAdmin');
+    }
+
+    function isTeacher() {
+      return hasRole('teacher');
+    }
+
+    function isParent() {
+      return hasRole('parent');
+    }
+
+    function isStudent() {
+      return hasRole('student');
+    }
+
+    function canAccessStudent(studentId) {
+      return isAdmin()
+        || (isParent() && userProfile().linkedStudentIds.hasAny([studentId]))
+        || (isStudent() && userProfile().linkedStudentIds.hasAny([studentId]));
+    }
+
+    function teacherOwnsClass(classId) {
+      return isTeacher()
+        && get(/databases/$(database)/documents/classes/$(classId)).data.schoolId == userProfile().schoolId
+        && get(/databases/$(database)/documents/classes/$(classId)).data.classTeacherId == request.auth.uid;
+    }
+
+    // ─── First-time provisioning ──────────────────────────────
+    // Allows the first verified user to create the fixed
+    // schools/mary-candyland document and their own users/{uid}
+    // admin profile in a single atomic transaction.
+    // getAfter() validates the post-transaction state of the
+    // paired document so neither can be created alone.
+
+    function isInitialSchoolCreate(schoolId) {
+      return emailVerified()
+        && schoolId == 'mary-candyland'
+        && !exists(/databases/$(database)/documents/schools/mary-candyland)
+        && !exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && request.resource.data.name == 'Mary Candyland School Complex'
+        && request.resource.data.code == 'MCS'
+        && request.resource.data.country == 'Ghana'
+        && request.resource.data.active == true
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.updatedBy == request.auth.uid
+        && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.uid == request.auth.uid
+        && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.schoolId == schoolId
+        && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'
+        && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true;
+    }
+
+    function isInitialUserCreate(uid) {
+      return emailVerified()
+        && uid == request.auth.uid
+        && !exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && !exists(/databases/$(database)/documents/schools/mary-candyland)
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.schoolId == 'mary-candyland'
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.role == 'admin'
+        && request.resource.data.active == true
+        && getAfter(/databases/$(database)/documents/schools/mary-candyland).data.name == 'Mary Candyland School Complex'
+        && getAfter(/databases/$(database)/documents/schools/mary-candyland).data.code == 'MCS'
+        && getAfter(/databases/$(database)/documents/schools/mary-candyland).data.active == true
+        && getAfter(/databases/$(database)/documents/schools/mary-candyland).data.createdBy == request.auth.uid;
+    }
+
+    // ─── schools ──────────────────────────────────────────────
+
+    match /schools/{schoolId} {
+      allow read: if sameSchool(schoolId);
+      allow create: if isInitialSchoolCreate(schoolId)
+        || (isAdmin() && sameSchool(schoolId));
+      allow update: if isAdmin() && sameSchool(schoolId);
+      allow delete: if isSuperAdmin() && sameSchool(schoolId);
+    }
+
+    // ─── users ────────────────────────────────────────────────
+
+    match /users/{uid} {
+      allow read: if signedIn()
+        && (request.auth.uid == uid
+          || (isAdmin() && sameSchool(resource.data.schoolId)));
+      allow create: if isInitialUserCreate(uid)
+        || (isAdmin() && sameSchool(request.resource.data.schoolId));
+      allow update: if isAdmin() && sameSchool(resource.data.schoolId);
+      allow delete: if isSuperAdmin() && sameSchool(resource.data.schoolId);
+    }
+
+    // ─── students ─────────────────────────────────────────────
+
+    match /students/{studentId} {
+      allow read: if sameSchool(resource.data.schoolId)
+        && (canAccessStudent(studentId)
+          || (isTeacher() && teacherOwnsClass(resource.data.classId)));
+      allow create: if isAdmin() && sameSchool(request.resource.data.schoolId)
+        && request.resource.data.admissionNumber is string
+        && request.resource.data.firstName is string
+        && request.resource.data.lastName is string
+        && request.resource.data.gender in ['male', 'female']
+        && request.resource.data.dateOfBirth is string
+        && request.resource.data.classId is string
+        && request.resource.data.academicYearId is string
+        && request.resource.data.status in ['active', 'inactive', 'graduated', 'transferred', 'withdrawn']
+        && request.resource.data.guardian is map
+        && request.resource.data.guardian.name is string
+        && request.resource.data.guardian.phone is string;
+      allow update: if isAdmin()
+        && sameSchool(resource.data.schoolId)
+        && request.resource.data.schoolId == resource.data.schoolId
+        && request.resource.data.status in ['active', 'inactive', 'graduated', 'transferred', 'withdrawn'];
+      allow delete: if isSuperAdmin() && sameSchool(resource.data.schoolId);
+    }
+
+    // ─── parents ──────────────────────────────────────────────
+
+    match /parents/{parentId} {
+      allow read: if sameSchool(resource.data.schoolId)
+        && (isAdmin() || userProfile().linkedParentId == parentId);
+      allow create, update: if isAdmin() && sameSchool(request.resource.data.schoolId);
+      allow delete: if isSuperAdmin() && sameSchool(resource.data.schoolId);
+    }
+
+    // ─── teachers ─────────────────────────────────────────────
+
+    match /teachers/{teacherId} {
+      allow read: if sameSchool(resource.data.schoolId)
+        && (isAdmin() || userProfile().linkedTeacherId == teacherId);
+      allow create, update: if isAdmin() && sameSchool(request.resource.data.schoolId);
+      allow delete: if isSuperAdmin() && sameSchool(resource.data.schoolId);
+    }
+
+    // ─── academicYears ───────────────────────────────────────
+
+    match /academicYears/{id} {
+      allow read: if sameSchool(resource.data.schoolId);
+      allow create, update: if isAdmin() && sameSchool(request.resource.data.schoolId);
+      allow delete: if isSuperAdmin() && sameSchool(resource.data.schoolId);
+    }
+
+    // ─── terms ────────────────────────────────────────────────
+
+    match /terms/{id} {
+      allow read: if sameSchool(resource.data.schoolId);
+      allow create, update: if isAdmin() && sameSchool(request.resource.data.schoolId);
+      allow delete: if isSuperAdmin() && sameSchool(resource.data.schoolId);
+    }
+
+    // ─── classes ──────────────────────────────────────────────
+
+    match /classes/{id} {
+      allow read: if sameSchool(resource.data.schoolId);
+      allow create, update: if isAdmin() && sameSchool(request.resource.data.schoolId);
+      allow delete: if isSuperAdmin() && sameSchool(resource.data.schoolId);
+    }
+
+    // ─── subjects ─────────────────────────────────────────────
+
+    match /subjects/{id} {
+      allow read: if sameSchool(resource.data.schoolId);
+      allow create, update: if isAdmin() && sameSchool(request.resource.data.schoolId);
+      allow delete: if isSuperAdmin() && sameSchool(resource.data.schoolId);
+    }
+
+    // ─── classSubjects ───────────────────────────────────────
+
+    match /classSubjects/{id} {
+      allow read: if sameSchool(resource.data.schoolId)
+        && (isAdmin()
+          || (isTeacher() && resource.data.teacherId == request.auth.uid)
+          || isParent()
+          || isStudent());
+      allow create, update: if isAdmin() && sameSchool(request.resource.data.schoolId);
+      allow delete: if isSuperAdmin() && sameSchool(resource.data.schoolId);
+    }
+
+    // ─── studentClassHistory ──────────────────────────────────
+
+    match /studentClassHistory/{id} {
+      allow read: if sameSchool(resource.data.schoolId)
+        && (isAdmin() || canAccessStudent(resource.data.studentId));
+      allow create: if isAdmin() && sameSchool(request.resource.data.schoolId);
+      allow update, delete: if isSuperAdmin() && sameSchool(resource.data.schoolId);
+    }
+
+    // ─── attendance ───────────────────────────────────────────
+
+    match /attendance/{id} {
+      allow read: if sameSchool(resource.data.schoolId)
+        && (isAdmin()
+          || canAccessStudent(resource.data.studentId)
+          || teacherOwnsClass(resource.data.classId));
+      allow create, update: if sameSchool(request.resource.data.schoolId)
+        && (isAdmin()
+          || (isTeacher() && teacherOwnsClass(request.resource.data.classId)));
+      allow delete: if isAdmin() && sameSchool(resource.data.schoolId);
+    }
+
+    // ─── assessments ──────────────────────────────────────────
+
+    match /assessments/{id} {
+      allow read: if sameSchool(resource.data.schoolId)
+        && (isAdmin()
+          || (isTeacher() && resource.data.teacherId == request.auth.uid)
+          || isParent()
+          || isStudent());
+      allow create, update: if sameSchool(request.resource.data.schoolId)
+        && (isAdmin()
+          || (isTeacher() && request.resource.data.teacherId == request.auth.uid));
+      allow delete: if isAdmin() && sameSchool(resource.data.schoolId);
+    }
+
+    // ─── results ──────────────────────────────────────────────
+
+    match /results/{id} {
+      allow read: if sameSchool(resource.data.schoolId)
+        && (isAdmin()
+          || canAccessStudent(resource.data.studentId)
+          || teacherOwnsClass(resource.data.classId));
+      allow create, update: if sameSchool(request.resource.data.schoolId)
+        && (isAdmin()
+          || (isTeacher() && teacherOwnsClass(request.resource.data.classId)));
+      allow delete: if isAdmin() && sameSchool(resource.data.schoolId);
+    }
+
+    // ─── gradingScales ────────────────────────────────────────
+
+    match /gradingScales/{id} {
+      allow read: if sameSchool(resource.data.schoolId);
+      allow create, update: if isAdmin() && sameSchool(request.resource.data.schoolId);
+      allow delete: if isSuperAdmin() && sameSchool(resource.data.schoolId);
+    }
+
+    // ─── reportCards ──────────────────────────────────────────
+
+    match /reportCards/{id} {
+      allow read: if sameSchool(resource.data.schoolId)
+        && (isAdmin() || canAccessStudent(resource.data.studentId));
+      allow create, update: if isAdmin() && sameSchool(request.resource.data.schoolId);
+      allow delete: if isSuperAdmin() && sameSchool(resource.data.schoolId);
+    }
+
+    // ─── feeStructures ────────────────────────────────────────
+
+    match /feeStructures/{id} {
+      allow read: if sameSchool(resource.data.schoolId)
+        && (isAdmin() || isParent() || isStudent());
+      allow create, update: if isAdmin() && sameSchool(request.resource.data.schoolId);
+      allow delete: if isSuperAdmin() && sameSchool(resource.data.schoolId);
+    }
+
+    // ─── studentFees ──────────────────────────────────────────
+
+    match /studentFees/{id} {
+      allow read: if sameSchool(resource.data.schoolId)
+        && (isAdmin() || canAccessStudent(resource.data.studentId));
+      allow create, update: if isAdmin() && sameSchool(request.resource.data.schoolId);
+      allow delete: if isSuperAdmin() && sameSchool(resource.data.schoolId);
+    }
+
+    // ─── payments ─────────────────────────────────────────────
+
+    match /payments/{id} {
+      allow read: if sameSchool(resource.data.schoolId)
+        && (isAdmin() || canAccessStudent(resource.data.studentId));
+      allow create: if isAdmin() && sameSchool(request.resource.data.schoolId);
+      allow update, delete: if isSuperAdmin() && sameSchool(resource.data.schoolId);
+    }
+
+    // ─── receipts ─────────────────────────────────────────────
+
+    match /receipts/{id} {
+      allow read: if sameSchool(resource.data.schoolId)
+        && (isAdmin() || canAccessStudent(resource.data.studentId));
+      allow create: if isAdmin() && sameSchool(request.resource.data.schoolId);
+      allow update, delete: if isSuperAdmin() && sameSchool(resource.data.schoolId);
+    }
+
+    // ─── timetables ───────────────────────────────────────────
+
+    match /timetables/{id} {
+      allow read: if sameSchool(resource.data.schoolId)
+        && (isAdmin()
+          || (isTeacher() && resource.data.teacherId == request.auth.uid)
+          || isParent()
+          || isStudent());
+      allow create, update: if isAdmin() && sameSchool(request.resource.data.schoolId);
+      allow delete: if isSuperAdmin() && sameSchool(resource.data.schoolId);
+    }
+
+    // ─── announcements ────────────────────────────────────────
+
+    match /announcements/{id} {
+      allow read: if sameSchool(resource.data.schoolId);
+      allow create, update: if isAdmin() && sameSchool(request.resource.data.schoolId);
+      allow delete: if isSuperAdmin() && sameSchool(resource.data.schoolId);
+    }
+
+    // ─── notifications ────────────────────────────────────────
+
+    match /notifications/{id} {
+      allow read: if sameSchool(resource.data.schoolId)
+        && resource.data.recipientUserId == request.auth.uid;
+      allow create: if signedIn()
+        && sameSchool(request.resource.data.schoolId)
+        && request.resource.data.recipientUserId == request.auth.uid;
+      allow update: if signedIn()
+        && sameSchool(resource.data.schoolId)
+        && resource.data.recipientUserId == request.auth.uid
+        && request.resource.data.recipientUserId == resource.data.recipientUserId;
+      allow delete: if isAdmin() && sameSchool(resource.data.schoolId);
+    }
+
+    // ─── documents ────────────────────────────────────────────
+
+    match /documents/{id} {
+      allow read: if sameSchool(resource.data.schoolId);
+      allow create: if isAdmin() && sameSchool(request.resource.data.schoolId);
+      allow update, delete: if isAdmin() && sameSchool(resource.data.schoolId);
+    }
+
+    // ─── auditLogs ─────────────────────────────────────────────
+
+    match /auditLogs/{id} {
+      allow read: if isAdmin() && sameSchool(resource.data.schoolId);
+      allow create: if isAdmin() && sameSchool(request.resource.data.schoolId);
+      allow update, delete: if isSuperAdmin() && sameSchool(resource.data.schoolId);
+    }
+
+    // ─── settings ─────────────────────────────────────────────
+
+    match /settings/{id} {
+      allow read: if sameSchool(resource.data.schoolId);
+      allow create, update: if isAdmin() && sameSchool(request.resource.data.schoolId);
+      allow delete: if isSuperAdmin() && sameSchool(resource.data.schoolId);
+    }
+
+    // ─── Deny everything else ─────────────────────────────────
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
