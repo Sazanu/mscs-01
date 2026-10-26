@@ -12,16 +12,26 @@ import {
   updateDoc,
   serverTimestamp,
   deleteDoc,
+  runTransaction,
   type DocumentData,
   type QueryConstraint,
   type DocumentSnapshot,
 } from 'firebase/firestore';
 import { firestore } from '@/lib/firebase';
-import { buildFullName, type Student, type StudentFormData, type AcademicYear, type SchoolClass } from '@/types/student';
+import {
+  buildFullName,
+  type Student,
+  type StudentFormData,
+  type AcademicYear,
+  type SchoolClass,
+  type StudentClassHistory,
+} from '@/types/student';
 
 const STUDENTS_COLLECTION = 'students';
 const ACADEMIC_YEARS_COLLECTION = 'academicYears';
 const CLASSES_COLLECTION = 'classes';
+const STUDENT_CLASS_HISTORY_COLLECTION = 'studentClassHistory';
+const COUNTERS_COLLECTION = 'counters';
 
 export type StudentQueryResult = {
   students: Student[];
@@ -43,6 +53,7 @@ function snapshotToStudent(snapshot: DocumentSnapshot<DocumentData>): Student {
   return {
     id: snapshot.id,
     schoolId: data.schoolId ?? '',
+    studentId: data.studentId ?? '',
     admissionNumber: data.admissionNumber ?? '',
     firstName: data.firstName ?? '',
     middleName: data.middleName ?? '',
@@ -95,10 +106,20 @@ export async function fetchStudents(params: StudentQueryParams): Promise<Student
   const docs = snapshot.docs;
   const hasMore = docs.length > pageSize;
   const visibleDocs = hasMore ? docs.slice(0, pageSize) : docs;
-  const students = visibleDocs.map(snapshotToStudent);
-  const lastDoc = visibleDocs.length > 0 ? visibleDocs[visibleDocs.length - 1] : null;
+  let students = visibleDocs.map(snapshotToStudent);
 
-  return { students, lastDoc, hasMore };
+  if (params.search) {
+    const searchLower = params.search.toLowerCase();
+    students = students.filter(
+      (s) =>
+        s.fullName.toLowerCase().includes(searchLower) ||
+        s.admissionNumber.toLowerCase().includes(searchLower) ||
+        s.studentId.toLowerCase().includes(searchLower),
+    );
+  }
+
+  const lastDoc = visibleDocs.length > 0 ? visibleDocs[visibleDocs.length - 1] : null;
+  return { students, lastDoc, hasMore: hasMore && students.length === visibleDocs.length };
 }
 
 export async function checkAdmissionNumberUnique(schoolId: string, admissionNumber: string): Promise<boolean> {
@@ -120,6 +141,18 @@ export async function fetchStudentById(studentId: string): Promise<Student | nul
   return snapshotToStudent(snap as DocumentSnapshot<DocumentData>);
 }
 
+export async function fetchStudentsByClassId(classId: string): Promise<Student[]> {
+  if (!firestore) throw new Error('Firebase is not configured.');
+  const q = query(
+    collection(firestore, STUDENTS_COLLECTION),
+    where('classId', '==', classId),
+    where('status', '==', 'active'),
+    orderBy('lastName', 'asc'),
+  );
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map((d) => snapshotToStudent(d as DocumentSnapshot<DocumentData>));
+}
+
 export async function fetchAcademicYears(schoolId: string): Promise<AcademicYear[]> {
   if (!firestore) return [];
   const q = query(
@@ -136,7 +169,7 @@ export async function fetchAcademicYears(schoolId: string): Promise<AcademicYear
       name: data.name ?? '',
       startDate: data.startDate ?? '',
       endDate: data.endDate ?? '',
-      status: data.status ?? 'active',
+      status: (data.status as AcademicYear['status']) ?? 'active',
       isCurrent: data.isCurrent ?? false,
     };
   });
@@ -161,7 +194,7 @@ export async function fetchClasses(schoolId: string): Promise<SchoolClass[]> {
       academicYearId: data.academicYearId ?? '',
       classTeacherId: data.classTeacherId,
       capacity: data.capacity ?? 0,
-      status: data.status ?? 'active',
+      status: (data.status as SchoolClass['status']) ?? 'active',
     };
   });
 }
@@ -203,6 +236,27 @@ function formDataToStudentData(formData: StudentFormData, schoolId: string) {
   };
 }
 
+async function generateStudentId(schoolId: string, admissionYear: string): Promise<string> {
+  if (!firestore) throw new Error('Firebase is not configured.');
+
+  return runTransaction(firestore, async (txn) => {
+    const counterRef = doc(firestore, COUNTERS_COLLECTION, `students_${schoolId}_${admissionYear}`);
+    const counterSnap = await txn.get(counterRef);
+    let nextSeq: number;
+
+    if (counterSnap.exists()) {
+      nextSeq = (counterSnap.data().count as number) + 1;
+      txn.update(counterRef, { count: nextSeq });
+    } else {
+      nextSeq = 1;
+      txn.set(counterRef, { count: nextSeq, schoolId, year: admissionYear });
+    }
+
+    const seqStr = String(nextSeq).padStart(5, '0');
+    return `MSCS-${seqStr}-${admissionYear}`;
+  });
+}
+
 export async function createStudent(
   formData: StudentFormData,
   schoolId: string,
@@ -215,13 +269,31 @@ export async function createStudent(
     throw new Error('A student with this admission number already exists in this school.');
   }
 
+  const admissionYear = formData.admissionDate
+    ? new Date(formData.admissionDate).getFullYear().toString()
+    : new Date().getFullYear().toString();
+
+  const studentId = await generateStudentId(schoolId, admissionYear);
+
   const data = {
     ...formDataToStudentData(formData, schoolId),
+    studentId,
     createdAt: serverTimestamp(),
     createdBy: userId,
   };
 
   const docRef = await addDoc(collection(firestore, STUDENTS_COLLECTION), data);
+
+  await addDoc(collection(firestore, STUDENT_CLASS_HISTORY_COLLECTION), {
+    schoolId,
+    studentId: docRef.id,
+    toClassId: formData.classId,
+    academicYearId: formData.academicYearId,
+    reason: 'Initial enrollment',
+    changedBy: userId,
+    changedAt: serverTimestamp(),
+  });
+
   return docRef.id;
 }
 
@@ -243,11 +315,83 @@ export async function updateStudentStatus(studentId: string, status: string): Pr
   });
 }
 
+export async function transferStudentClass(
+  studentId: string,
+  newClassId: string,
+  academicYearId: string,
+  reason: string,
+  schoolId: string,
+  userId: string,
+): Promise<void> {
+  if (!firestore) throw new Error('Firebase is not configured.');
+
+  const studentRef = doc(firestore, STUDENTS_COLLECTION, studentId);
+  const studentSnap = await getDoc(studentRef);
+  if (!studentSnap.exists()) throw new Error('Student not found.');
+
+  const oldClassId = studentSnap.data()?.classId;
+
+  await runTransaction(firestore, async (txn) => {
+    txn.update(studentRef, {
+      classId: newClassId,
+      academicYearId,
+      updatedAt: serverTimestamp(),
+    });
+
+    const historyRef = doc(collection(firestore, STUDENT_CLASS_HISTORY_COLLECTION));
+    txn.set(historyRef, {
+      schoolId,
+      studentId,
+      fromClassId: oldClassId ?? null,
+      toClassId: newClassId,
+      academicYearId,
+      reason,
+      changedBy: userId,
+      changedAt: serverTimestamp(),
+    });
+  });
+}
+
+export async function fetchStudentClassHistory(studentId: string): Promise<StudentClassHistory[]> {
+  if (!firestore) return [];
+  const q = query(
+    collection(firestore, STUDENT_CLASS_HISTORY_COLLECTION),
+    where('studentId', '==', studentId),
+    orderBy('changedAt', 'desc'),
+  );
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map((d) => {
+    const data = d.data();
+    return {
+      id: d.id,
+      schoolId: data.schoolId ?? '',
+      studentId: data.studentId ?? '',
+      fromClassId: data.fromClassId ?? undefined,
+      toClassId: data.toClassId ?? '',
+      academicYearId: data.academicYearId ?? '',
+      reason: data.reason ?? '',
+      changedBy: data.changedBy ?? '',
+      changedAt: data.changedAt?.toDate?.()?.toISOString?.() ?? '',
+    };
+  });
+}
+
 export async function countStudentsBySchool(schoolId: string): Promise<number> {
   if (!firestore) return 0;
   const q = query(collection(firestore, STUDENTS_COLLECTION), where('schoolId', '==', schoolId));
   const snapshot = await getDocs(q);
   return snapshot.size;
+}
+
+export async function fetchAllStudents(schoolId: string): Promise<Student[]> {
+  if (!firestore) throw new Error('Firebase is not configured.');
+  const q = query(
+    collection(firestore, STUDENTS_COLLECTION),
+    where('schoolId', '==', schoolId),
+    orderBy('lastName', 'asc'),
+  );
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map((d) => snapshotToStudent(d as DocumentSnapshot<DocumentData>));
 }
 
 // ─── Academic Years CRUD ─────────────────────────────────────
@@ -257,6 +401,24 @@ export async function createAcademicYear(
   data: { name: string; startDate: string; endDate: string; isCurrent: boolean },
 ): Promise<string> {
   if (!firestore) throw new Error('Firebase is not configured.');
+
+  if (data.isCurrent) {
+    const existing = await getDocs(
+      query(
+        collection(firestore, ACADEMIC_YEARS_COLLECTION),
+        where('schoolId', '==', schoolId),
+        where('isCurrent', '==', true),
+      ),
+    );
+    if (!existing.empty) {
+      await Promise.all(
+        existing.docs.map((d) =>
+          updateDoc(d.ref, { isCurrent: false, updatedAt: serverTimestamp() }),
+        ),
+      );
+    }
+  }
+
   const docRef = await addDoc(collection(firestore, ACADEMIC_YEARS_COLLECTION), {
     schoolId,
     name: data.name.trim(),
@@ -303,7 +465,7 @@ export async function createClass(
 
 export async function updateClass(
   id: string,
-  data: { name?: string; level?: string; academicYearId?: string; capacity?: number; status?: string },
+  data: { name?: string; level?: string; academicYearId?: string; capacity?: number; status?: string; classTeacherId?: string },
 ): Promise<void> {
   if (!firestore) throw new Error('Firebase is not configured.');
   await updateDoc(doc(firestore, CLASSES_COLLECTION, id), { ...data, updatedAt: serverTimestamp() });
