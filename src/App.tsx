@@ -9,6 +9,8 @@ import { StudentRegistrationPage } from '@/pages/StudentRegistrationPage';
 import { StudentProfilePage } from '@/pages/StudentProfilePage';
 import { StudentEditPage } from '@/pages/StudentEditPage';
 import { AcademicsPage } from '@/pages/AcademicsPage';
+import { AttendancePage } from '@/pages/AttendancePage';
+import { ReportsPage } from '@/pages/ReportsPage';
 import {
   ArrowUpRight,
   Bell,
@@ -53,7 +55,9 @@ type View =
   | { name: 'studentRegistration' }
   | { name: 'studentProfile'; studentId: string }
   | { name: 'studentEdit'; studentId: string }
-  | { name: 'academics' };
+  | { name: 'academics' }
+  | { name: 'attendance' }
+  | { name: 'reports' };
 
 const navItems: NavItem[] = [
   { label: 'Dashboard', icon: <LayoutDashboard size={18} /> },
@@ -112,12 +116,16 @@ function Dashboard({ profile, school, onSignOut }: { profile: UserProfile; schoo
   const activeNav: string = view.name === 'dashboard' ? 'Dashboard'
     : view.name.startsWith('student') ? 'Students'
     : view.name === 'academics' ? 'Academics'
+    : view.name === 'attendance' ? 'Attendance'
+    : view.name === 'reports' ? 'Reports'
     : 'Dashboard';
 
   const handleNav = (label: string) => {
     if (label === 'Dashboard') setView({ name: 'dashboard' });
     else if (label === 'Students') setView({ name: 'students' });
     else if (label === 'Academics') setView({ name: 'academics' });
+    else if (label === 'Attendance') setView({ name: 'attendance' });
+    else if (label === 'Reports') setView({ name: 'reports' });
     else showNotice(`${label} module is coming soon.`);
     setIsSidebarOpen(false);
   };
@@ -157,6 +165,10 @@ function Dashboard({ profile, school, onSignOut }: { profile: UserProfile; schoo
         );
       case 'academics':
         return <AcademicsPage />;
+      case 'attendance':
+        return <AttendancePage />;
+      case 'reports':
+        return <ReportsPage />;
       default:
         return <DashboardContent profile={profile} showNotice={showNotice} onAddStudent={() => setView({ name: 'studentRegistration' })} />;
     }
