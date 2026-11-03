@@ -1,5 +1,3 @@
-import { getDocs, query, where, collection, orderBy } from 'firebase/firestore';
-import { firestore } from '@/lib/firebase';
 import { fetchAllStudents, fetchAcademicYears, fetchClasses } from '@/data/studentService';
 import { fetchSubjects, fetchClassSubjects } from '@/data/academicService';
 import {
@@ -7,12 +5,11 @@ import {
   computeSummary,
   type AttendanceSummary,
 } from '@/data/attendanceService';
-import type { Student, AcademicYear, SchoolClass, Subject, ClassSubject } from '@/types/student';
-import type { AttendanceRecord } from '@/types/student';
+import type { StudentStatus } from '@/types/student';
 
 export type EnrollmentByClass = { className: string; count: number };
 export type EnrollmentByGender = { male: number; female: number };
-export type EnrollmentByStatus = { status: string; count: number };
+export type EnrollmentByStatus = { status: StudentStatus; count: number };
 export type NewAdmissionsByYear = { yearName: string; count: number };
 export type ClassSubjectReport = {
   className: string;
@@ -47,7 +44,7 @@ export async function generateStudentReport(schoolId: string): Promise<StudentRe
     byGender[s.gender] = (byGender[s.gender] ?? 0) + 1;
   }
 
-  const byStatusMap = new Map<string, number>();
+  const byStatusMap = new Map<StudentStatus, number>();
   for (const s of students) {
     byStatusMap.set(s.status, (byStatusMap.get(s.status) ?? 0) + 1);
   }

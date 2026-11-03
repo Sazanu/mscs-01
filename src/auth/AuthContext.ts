@@ -27,6 +27,7 @@ export type AuthContextValue = {
   user: User | null;
   profile: UserProfile | null;
   school: SchoolProfile | null;
+  needsSetup: boolean;
   loading: boolean;
   configError: string | null;
   profileError: string | null;

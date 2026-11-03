@@ -40,7 +40,7 @@ export function ReportsPage() {
       setClasses(cls);
       setYears(yrs);
     } catch {
-      // ignore
+      setError('We could not load classes and academic years for reports.');
     }
   }, [schoolId]);
 
@@ -92,6 +92,8 @@ export function ReportsPage() {
   useEffect(() => { void loadStudentReport(); }, [loadStudentReport]);
   useEffect(() => { void loadAcademicReport(); }, [loadAcademicReport]);
 
+  const maxYearTotal = Math.max(0, ...(academicReport?.yearEnrollment.map((ye) => ye.total) ?? []));
+
   const handleExportStudents = () => {
     if (!studentReport) return;
     exportToCSV('student_report.csv',
@@ -101,7 +103,7 @@ export function ReportsPage() {
         ['Male', studentReport.byGender.male],
         ['Female', studentReport.byGender.female],
         ...studentReport.byClass.map((c) => [`Class: ${c.className}`, c.count]),
-        ...studentReport.byStatus.map((s) => [`Status: ${statusLabel(s.status as never)}`, s.count]),
+        ...studentReport.byStatus.map((s) => [`Status: ${statusLabel(s.status)}`, s.count]),
         ...studentReport.newAdmissions.map((a) => [`New: ${a.yearName}`, a.count]),
       ],
     );
@@ -156,7 +158,7 @@ export function ReportsPage() {
                 </div>
                 <div className="report-stats">
                   {studentReport.byStatus.map((s) => (
-                    <div key={s.status} className="report-stat"><span>{statusLabel(s.status as never)}</span><strong>{s.count}</strong></div>
+                    <div key={s.status} className="report-stat"><span>{statusLabel(s.status)}</span><strong>{s.count}</strong></div>
                   ))}
                 </div>
               </section>
@@ -271,7 +273,7 @@ export function ReportsPage() {
                   {academicReport.yearEnrollment.map((ye) => (
                     <div key={ye.yearName} className="report-bar-row">
                       <span>{ye.yearName}</span>
-                      <div className="report-bar-track"><div className="report-bar-fill" style={{ width: '60%' }} /></div>
+                      <div className="report-bar-track"><div className="report-bar-fill" style={{ width: `${maxYearTotal > 0 ? (ye.total / maxYearTotal) * 100 : 0}%` }} /></div>
                       <strong>{ye.total}</strong>
                     </div>
                   ))}
