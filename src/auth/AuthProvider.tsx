@@ -41,7 +41,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [school, setSchool] = useState<SchoolProfile | null>(null);
-  const [needsSetup, setNeedsSetup] = useState(false);
   const [loading, setLoading] = useState(true);
   const [profileError, setProfileError] = useState<string | null>(null);
 
@@ -55,7 +54,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(nextUser);
       setProfile(null);
       setSchool(null);
-      setNeedsSetup(false);
       setProfileError(null);
 
       if (!nextUser) {
@@ -72,7 +70,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         const profileSnapshot = await getDoc(doc(firestore, 'users', nextUser.uid));
         if (!profileSnapshot.exists()) {
-          setNeedsSetup(true);
+          setProfileError('Your administrator account has not been linked to a school yet. Please contact the system owner.');
         } else {
           const profileData = profileSnapshot.data();
           if (!isUserProfileData(profileData)) {
@@ -100,7 +98,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     user,
     profile,
     school,
-    needsSetup,
     loading,
     configError: firebaseConfigError,
     profileError,
@@ -117,7 +114,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     signOutUser: async () => {
       if (firebaseAuth) await signOut(firebaseAuth);
     },
-  }), [loading, needsSetup, profile, profileError, school, user]);
+  }), [loading, profile, profileError, school, user]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

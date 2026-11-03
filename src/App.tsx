@@ -1,8 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { useAuth } from '@/auth/AuthContext';
 import type { SchoolProfile, UserProfile } from '@/auth/AuthContext';
-import { attendanceData, dashboardMetrics, recentActivities } from '@/data/dashboardSample';
-import { InitialSetupPage } from '@/pages/InitialSetupPage';
+import { DashboardPage } from '@/pages/DashboardPage';
 import { LoginPage } from '@/pages/LoginPage';
 import { StudentDirectory } from '@/pages/StudentDirectory';
 import { StudentRegistrationPage } from '@/pages/StudentRegistrationPage';
@@ -18,12 +17,10 @@ import {
   CalendarDays,
   Check,
   ChevronDown,
-  CircleDollarSign,
   GraduationCap,
   LayoutDashboard,
   Menu,
   MoreHorizontal,
-  Plus,
   Search,
   Settings,
   ShieldCheck,
@@ -38,15 +35,6 @@ type NavItem = {
   label: string;
   icon: ReactNode;
   badge?: string;
-};
-
-type Metric = {
-  label: string;
-  value: string;
-  detail: string;
-  icon: ReactNode;
-  accent: string;
-  trend?: string;
 };
 
 type View =
@@ -68,29 +56,12 @@ const navItems: NavItem[] = [
   { label: 'Reports', icon: <ArrowUpRight size={18} /> },
 ];
 
-const metricIcons: Record<string, ReactNode> = {
-  'Total students': <GraduationCap size={20} />,
-  'Attendance rate': <ShieldCheck size={20} />,
-  'Fees collected': <CircleDollarSign size={20} />,
-  'Staff members': <UserRound size={20} />,
-};
-
-const activityIcons: Record<string, ReactNode> = {
-  student: <Plus size={16} />,
-  finance: <CircleDollarSign size={16} />,
-  result: <Check size={16} />,
-};
-
-const metrics: Metric[] = dashboardMetrics.map((metric) => ({ ...metric, icon: metricIcons[metric.label] }));
-const activities = recentActivities.map((activity) => ({ ...activity, icon: activityIcons[activity.type] }));
-
 function App() {
-  const { user, profile, school, needsSetup, loading, profileError, configError, signOutUser } = useAuth();
+  const { user, profile, school, loading, profileError, configError, signOutUser } = useAuth();
 
   if (loading) return <AuthLoading />;
   if (!user) return <LoginPage />;
   if (configError) return <AccessDenied message={configError} onSignOut={signOutUser} />;
-  if (needsSetup) return <InitialSetupPage />;
   if (profileError || !profile || !school) return <AccessDenied message={profileError ?? 'Your school workspace is unavailable.'} onSignOut={signOutUser} />;
   return <Dashboard profile={profile} school={school} onSignOut={signOutUser} />;
 }
@@ -170,7 +141,7 @@ function Dashboard({ profile, school, onSignOut }: { profile: UserProfile; schoo
       case 'reports':
         return <ReportsPage />;
       default:
-        return <DashboardContent profile={profile} showNotice={showNotice} onAddStudent={() => setView({ name: 'studentRegistration' })} />;
+        return <DashboardPage profile={profile} onAddStudent={() => setView({ name: 'studentRegistration' })} />;
     }
   };
 
@@ -226,38 +197,6 @@ function Dashboard({ profile, school, onSignOut }: { profile: UserProfile; schoo
       </main>
       {notice && <div className="toast"><Check size={17} />{notice}</div>}
     </div>
-  );
-}
-
-type DashboardContentProps = {
-  profile: UserProfile;
-  showNotice: (message: string) => void;
-  onAddStudent: () => void;
-};
-
-function DashboardContent({ profile, showNotice, onAddStudent }: DashboardContentProps) {
-  return (
-    <>
-      <section className="welcome-row">
-        <div><p className="eyebrow">Wednesday, 01 October 2026</p><h1>Good morning, {profile.displayName.split(' ')[0]}</h1><p className="welcome-copy">Here is what is happening across your school today.</p></div>
-        <button className="primary-button" onClick={onAddStudent}><Plus size={18} /> Add student</button>
-      </section>
-
-      <section className="metric-grid" aria-label="School overview">
-        {metrics.map((metric) => <article className="metric-card" key={metric.label}><div className={`metric-icon ${metric.accent}`}>{metric.icon}</div><div className="metric-copy"><span>{metric.label}</span><strong>{metric.value}</strong><small>{metric.detail}</small>{metric.trend && <em>{metric.trend}</em>}</div><button className="card-menu" aria-label={`More ${metric.label} options`}><MoreHorizontal size={18} /></button></article>)}
-      </section>
-
-      <section className="dashboard-grid">
-        <article className="panel attendance-panel"><div className="panel-heading"><div><p className="eyebrow">Daily overview</p><h2>Attendance trends</h2></div><button className="select-button">This week <ChevronDown size={15} /></button></div><div className="attendance-summary"><div><strong>94.8%</strong><span><b>↑ 2.4%</b> from last week</span></div><div className="legend"><span><i className="legend-dot present" />Present</span><span><i className="legend-dot absent" />Absent</span></div></div><div className="chart"><div className="chart-y-axis"><span>100%</span><span>75%</span><span>50%</span><span>25%</span><span>0%</span></div><div className="chart-area"><div className="chart-lines"><i /><i /><i /><i /><i /></div><div className="bars">{attendanceData.map((item) => <div className="bar-group" key={item.day}><div className="bar-value">{item.value}%</div><div className="bar-track"><div className="bar-fill" style={{ height: `${item.value}%` }} /></div><span>{item.day}</span></div>)}</div></div></div></article>
-
-        <article className="panel activities-panel"><div className="panel-heading"><div><p className="eyebrow">Live feed</p><h2>Recent activity</h2></div><button className="text-button" onClick={() => showNotice('Showing the full activity history.')}>View all <ArrowUpRight size={15} /></button></div><div className="activity-list">{activities.map((activity) => <div className="activity-item" key={activity.title}><div className="activity-icon">{activity.icon}</div><div className="activity-copy"><strong>{activity.title}</strong><span>{activity.detail}</span></div><time>{activity.time}</time></div>)}</div><button className="activity-footer" onClick={() => showNotice('Activity history is up to date.')}>All activity is up to date <Check size={15} /></button></article>
-      </section>
-
-      <section className="bottom-grid">
-        <article className="panel birthdays-panel"><div className="panel-heading"><div><p className="eyebrow">This week</p><h2>Upcoming birthdays</h2></div><button className="icon-button subtle" aria-label="More birthday options"><MoreHorizontal size={18} /></button></div><div className="birthday-list"><div className="birthday-row"><div className="birthday-avatar pink">AN</div><div><strong>Adwoa Nyarko</strong><span>Primary 2 · 03 Oct</span></div><span className="birthday-tag">In 2 days</span></div><div className="birthday-row"><div className="birthday-avatar blue">KO</div><div><strong>Kofi Owusu</strong><span>KG 2 · 05 Oct</span></div><span className="birthday-tag">In 4 days</span></div></div></article>
-        <article className="panel classes-panel"><div className="panel-heading"><div><p className="eyebrow">Academic year 2026/27</p><h2>Class overview</h2></div><button className="text-button" onClick={() => showNotice('Opening the full class list.')}>View classes <ArrowUpRight size={15} /></button></div><div className="class-progress"><div className="progress-label"><span>Students by school level</span><strong>248 total</strong></div><div className="progress-bar"><i className="progress-creche" /><i className="progress-primary" /><i className="progress-jhs" /></div><div className="progress-legend"><span><i className="legend-dot creche" />Early years <b>62</b></span><span><i className="legend-dot primary" />Primary <b>128</b></span><span><i className="legend-dot jhs" />JHS <b>58</b></span></div></div></article>
-      </section>
-    </>
   );
 }
 
