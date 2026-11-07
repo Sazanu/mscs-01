@@ -10,6 +10,9 @@ import { StudentEditPage } from '@/pages/StudentEditPage';
 import { AcademicsPage } from '@/pages/AcademicsPage';
 import { AttendancePage } from '@/pages/AttendancePage';
 import { ReportsPage } from '@/pages/ReportsPage';
+import { FinancePage } from '@/pages/FinancePage';
+import { SettingsPage } from '@/pages/SettingsPage';
+import { UsersPage } from '@/pages/UsersPage';
 import {
   ArrowUpRight,
   Bell,
@@ -45,7 +48,10 @@ type View =
   | { name: 'studentEdit'; studentId: string }
   | { name: 'academics' }
   | { name: 'attendance' }
-  | { name: 'reports' };
+  | { name: 'reports' }
+  | { name: 'finance' }
+  | { name: 'settings' }
+  | { name: 'users' };
 
 const navItems: NavItem[] = [
   { label: 'Dashboard', icon: <LayoutDashboard size={18} /> },
@@ -89,6 +95,9 @@ function Dashboard({ profile, school, onSignOut }: { profile: UserProfile; schoo
     : view.name === 'academics' ? 'Academics'
     : view.name === 'attendance' ? 'Attendance'
     : view.name === 'reports' ? 'Reports'
+    : view.name === 'finance' ? 'Finance'
+    : view.name === 'settings' ? 'Settings'
+    : view.name === 'users' ? 'Users'
     : 'Dashboard';
 
   const handleNav = (label: string) => {
@@ -97,6 +106,7 @@ function Dashboard({ profile, school, onSignOut }: { profile: UserProfile; schoo
     else if (label === 'Academics') setView({ name: 'academics' });
     else if (label === 'Attendance') setView({ name: 'attendance' });
     else if (label === 'Reports') setView({ name: 'reports' });
+    else if (label === 'Finance') setView({ name: 'finance' });
     else showNotice(`${label} module is coming soon.`);
     setIsSidebarOpen(false);
   };
@@ -140,6 +150,12 @@ function Dashboard({ profile, school, onSignOut }: { profile: UserProfile; schoo
         return <AttendancePage />;
       case 'reports':
         return <ReportsPage />;
+      case 'finance':
+        return <FinancePage />;
+      case 'settings':
+        return <SettingsPage />;
+      case 'users':
+        return <UsersPage />;
       default:
         return <DashboardPage profile={profile} onAddStudent={() => setView({ name: 'studentRegistration' })} />;
     }
@@ -174,8 +190,8 @@ function Dashboard({ profile, school, onSignOut }: { profile: UserProfile; schoo
 
         <p className="nav-label nav-label-spaced">Manage</p>
         <nav className="main-nav" aria-label="Management navigation">
-          <button className={`nav-item ${activeNav === 'Settings' ? 'nav-item-active' : ''}`} onClick={() => showNotice('Settings is coming soon.')}><Settings size={18} /><span>Settings</span></button>
-          <button className={`nav-item ${activeNav === 'Users' ? 'nav-item-active' : ''}`} onClick={() => showNotice('User management is coming soon.')}><UserRound size={18} /><span>Users & roles</span></button>
+          <button className={`nav-item ${activeNav === 'Settings' ? 'nav-item-active' : ''}`} onClick={() => { setView({ name: 'settings' }); setIsSidebarOpen(false); }}><Settings size={18} /><span>Settings</span></button>
+          <button className={`nav-item ${activeNav === 'Users' ? 'nav-item-active' : ''}`} onClick={() => { setView({ name: 'users' }); setIsSidebarOpen(false); }}><UserRound size={18} /><span>Users &amp; roles</span></button>
         </nav>
 
         <div className="sidebar-footer">

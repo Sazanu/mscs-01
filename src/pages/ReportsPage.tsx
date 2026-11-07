@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Download, FileText, Users, CalendarDays, BookOpen, BarChart3 } from 'lucide-react';
+import { Download, FileText, Users, CalendarDays, BookOpen, BarChart3, CircleDollarSign } from 'lucide-react';
 import { useAuth } from '@/auth/AuthContext';
 import { fetchClasses, fetchAcademicYears } from '@/data/studentService';
 import {
@@ -11,9 +11,10 @@ import {
   type AttendanceReportData,
   type AcademicReportData,
 } from '@/data/reportService';
+import { generateFinanceReport, type FinanceSummary, type Payment } from '@/data/financeService';
 import { statusLabel, formatDate, type SchoolClass, type AcademicYear } from '@/types/student';
 
-type ReportTab = 'students' | 'attendance' | 'academic';
+type ReportTab = 'students' | 'attendance' | 'academic' | 'finance';
 
 export function ReportsPage() {
   const { profile } = useAuth();
@@ -28,6 +29,7 @@ export function ReportsPage() {
   const [studentReport, setStudentReport] = useState<StudentReportData | null>(null);
   const [attendanceReport, setAttendanceReport] = useState<AttendanceReportData | null>(null);
   const [academicReport, setAcademicReport] = useState<AcademicReportData | null>(null);
+  const [financeReport, setFinanceReport] = useState<{ summary: FinanceSummary; payments: Payment[]; studentNames: Map<string, string> } | null>(null);
 
   const [attClassId, setAttClassId] = useState('');
   const [attStartDate, setAttStartDate] = useState('');
@@ -92,6 +94,19 @@ export function ReportsPage() {
   useEffect(() => { void loadStudentReport(); }, [loadStudentReport]);
   useEffect(() => { void loadAcademicReport(); }, [loadAcademicReport]);
 
+  const loadFinanceReport = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const r = await generateFinanceReport(schoolId);
+      setFinanceReport({ summary: r.summary, payments: r.payments, studentNames: r.studentNames });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to generate finance report.');
+    } finally {
+      setLoading(false);
+    }
+  }, [schoolId]);
+
   const maxYearTotal = Math.max(0, ...(academicReport?.yearEnrollment.map((ye) => ye.total) ?? []));
 
   const handleExportStudents = () => {
@@ -125,6 +140,17 @@ export function ReportsPage() {
     );
   };
 
+  const handleExportFinance = () => {
+    if (!financeReport) return;
+    exportToCSV('finance_report.csv',
+      ['Student', 'Amount', 'Method', 'Reference', 'Date', 'Status'],
+      financeReport.payments.map((p) => [
+        financeReport.studentNames.get(p.studentId) ?? 'Unknown',
+        p.amount, p.paymentMethod, p.reference, p.paymentDate, p.status,
+      ]),
+    );
+  };
+
   return (
     <div className="reports-page">
       <div className="academics-header">
@@ -139,6 +165,7 @@ export function ReportsPage() {
         <button className={`tab-item ${tab === 'students' ? 'tab-active' : ''}`} onClick={() => setTab('students')}><Users size={15} /> Student Reports</button>
         <button className={`tab-item ${tab === 'attendance' ? 'tab-active' : ''}`} onClick={() => setTab('attendance')}><CalendarDays size={15} /> Attendance Reports</button>
         <button className={`tab-item ${tab === 'academic' ? 'tab-active' : ''}`} onClick={() => setTab('academic')}><BookOpen size={15} /> Academic Reports</button>
+        <button className={`tab-item ${tab === 'finance' ? 'tab-active' : ''}`} onClick={() => { setTab('finance'); if (!financeReport) void loadFinanceReport(); }}><CircleDollarSign size={15} /> Finance Reports</button>
       </div>
 
       {error && <div className="auth-alert" style={{ marginBottom: '16px' }}>{error}</div>}
@@ -278,6 +305,38 @@ export function ReportsPage() {
                     </div>
                   ))}
                 </div>
+              </section>
+            </div>
+          )}
+
+          {tab === 'finance' && financeReport && (
+            <div className="reports-grid">
+              <section className="panel report-section">
+                <div className="report-section-heading"><BarChart3 size={17} /><h2>Finance Summary</h2><button className="secondary-button" onClick={handleExportFinance}><Download size={14} /> CSV</button></div>
+                <div className="report-stats">
+                  <div className="report-stat"><span>Total collected</span><strong>{`GH₵ ${financeReport.summary.totalCollected.toLocaleString()}`}</strong></div>
+                  <div className="report-stat"><span>Outstanding</span><strong>{`GH₵ ${financeReport.summary.totalOutstanding.toLocaleString()}`}</strong></div>
+                  <div className="report-stat"><span>Expected</span><strong>{`GH₵ ${financeReport.summary.totalExpected.toLocaleString()}`}</strong></div>
+                  <div className="report-stat"><span>Collection rate</span><strong>{financeReport.summary.collectionRate}%</strong></div>
+                  <div className="report-stat"><span>Payments</span><strong>{financeReport.summary.paymentCount}</strong></div>
+                </div>
+              </section>
+
+              <section className="panel report-section">
+                <div className="report-section-heading"><CircleDollarSign size={17} /><h2>Recent Payments</h2></div>
+                <table className="student-table">
+                  <thead><tr><th>Student</th><th>Amount</th><th>Method</th><th>Date</th></tr></thead>
+                  <tbody>
+                    {financeReport.payments.slice(0, 20).map((p) => (
+                      <tr key={p.id}>
+                        <td>{financeReport.studentNames.get(p.studentId) ?? 'Unknown'}</td>
+                        <td>{`GH₵ ${p.amount.toLocaleString()}`}</td>
+                        <td>{p.paymentMethod}</td>
+                        <td>{p.paymentDate}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </section>
             </div>
           )}
