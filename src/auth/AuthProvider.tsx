@@ -1,24 +1,8 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut, type User } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
-import { AuthContext, type AuthContextValue, type SchoolProfile, type UserProfile } from '@/auth/AuthContext';
-import { firebaseAuth, firebaseConfigError, firestore } from '@/lib/firebase';
-import { provisionInitialSchool } from '@/data/schoolProvisioning';
-
-function isUserProfileData(data: Record<string, unknown>): data is Omit<UserProfile, 'uid'> {
-  return typeof data.schoolId === 'string'
-    && typeof data.displayName === 'string'
-    && typeof data.email === 'string'
-    && typeof data.role === 'string'
-    && ['superAdmin', 'admin', 'teacher', 'parent', 'student'].includes(data.role)
-    && data.active === true;
-}
-
-function isSchoolProfileData(data: Record<string, unknown>): data is Omit<SchoolProfile, 'id'> {
-  return typeof data.name === 'string'
-    && typeof data.code === 'string'
-    && data.active === true;
-}
+import { AuthContext, type AuthContextValue, type SchoolProfile } from '@/auth/AuthContext';
+import { firebaseAuth, firebaseConfigError } from '@/lib/firebase';
+import { findMaryCandylandSchool } from '@/data/schoolService';
 
 function getAuthErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message.includes('Firebase is not configured')) {
@@ -38,41 +22,8 @@ function getAuthErrorMessage(error: unknown): string {
   return 'Unable to sign in right now. Please try again.';
 }
 
-async function loadSchoolAndProfile(user: User): Promise<{ profile: UserProfile; school: SchoolProfile }> {
-  if (!firestore) throw new Error('Firebase is not configured.');
-
-  const profileRef = doc(firestore, 'users', user.uid);
-  const profileSnapshot = await getDoc(profileRef);
-
-  if (!profileSnapshot.exists()) {
-    await provisionInitialSchool(user);
-  }
-
-  const refreshedSnapshot = await getDoc(profileRef);
-  if (!refreshedSnapshot.exists()) {
-    throw new Error('Your school profile could not be created. Please try again.');
-  }
-
-  const profileData = refreshedSnapshot.data();
-  if (!isUserProfileData(profileData)) {
-    throw new Error('Your school access profile is incomplete or inactive. Please contact an administrator.');
-  }
-
-  const schoolSnapshot = await getDoc(doc(firestore, 'schools', profileData.schoolId));
-  const schoolData = schoolSnapshot.data();
-  if (!schoolSnapshot.exists() || !schoolData || !isSchoolProfileData(schoolData)) {
-    throw new Error('Your school workspace could not be found. Please contact an administrator.');
-  }
-
-  return {
-    profile: { uid: refreshedSnapshot.id, ...profileData },
-    school: { id: schoolSnapshot.id, ...schoolData },
-  };
-}
-
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [profile, setProfile] = useState<UserProfile | null>(null);
   const [school, setSchool] = useState<SchoolProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [profileError, setProfileError] = useState<string | null>(null);
@@ -85,7 +36,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     return onAuthStateChanged(firebaseAuth, async (nextUser) => {
       setUser(nextUser);
-      setProfile(null);
       setSchool(null);
       setProfileError(null);
 
@@ -95,11 +45,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       try {
-        const result = await loadSchoolAndProfile(nextUser);
-        setProfile(result.profile);
-        setSchool(result.school);
-      } catch (error) {
-        setProfileError(error instanceof Error ? error.message : 'Unable to load your school workspace.');
+        const found = await findMaryCandylandSchool();
+        if (!found) {
+          setProfileError('The Mary Candyland School record could not be found in the database. Please contact the system owner.');
+        } else {
+          setSchool(found);
+        }
+      } catch {
+        setProfileError('Unable to load the Mary Candyland School workspace. Please try again.');
       } finally {
         setLoading(false);
       }
@@ -108,7 +61,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<AuthContextValue>(() => ({
     user,
-    profile,
+    profile: school ? {
+      uid: user?.uid ?? '',
+      schoolId: school.id,
+      displayName: user?.displayName ?? user?.email ?? 'Administrator',
+      email: user?.email ?? '',
+      role: 'admin',
+      active: true,
+    } : null,
     school,
     loading,
     configError: firebaseConfigError,
@@ -126,7 +86,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     signOutUser: async () => {
       if (firebaseAuth) await signOut(firebaseAuth);
     },
-  }), [loading, profile, profileError, school, user]);
+  }), [loading, profileError, school, user]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
