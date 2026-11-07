@@ -3,6 +3,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signOut, type User } fr
 import { doc, getDoc } from 'firebase/firestore';
 import { AuthContext, type AuthContextValue, type SchoolProfile, type UserProfile } from '@/auth/AuthContext';
 import { firebaseAuth, firebaseConfigError, firestore } from '@/lib/firebase';
+import { provisionInitialSchool } from '@/data/schoolProvisioning';
 
 function isUserProfileData(data: Record<string, unknown>): data is Omit<UserProfile, 'uid'> {
   return typeof data.schoolId === 'string'
@@ -37,11 +38,42 @@ function getAuthErrorMessage(error: unknown): string {
   return 'Unable to sign in right now. Please try again.';
 }
 
+async function loadSchoolAndProfile(user: User): Promise<{ profile: UserProfile; school: SchoolProfile }> {
+  if (!firestore) throw new Error('Firebase is not configured.');
+
+  const profileRef = doc(firestore, 'users', user.uid);
+  const profileSnapshot = await getDoc(profileRef);
+
+  if (!profileSnapshot.exists()) {
+    await provisionInitialSchool(user);
+  }
+
+  const refreshedSnapshot = await getDoc(profileRef);
+  if (!refreshedSnapshot.exists()) {
+    throw new Error('Your school profile could not be created. Please try again.');
+  }
+
+  const profileData = refreshedSnapshot.data();
+  if (!isUserProfileData(profileData)) {
+    throw new Error('Your school access profile is incomplete or inactive. Please contact an administrator.');
+  }
+
+  const schoolSnapshot = await getDoc(doc(firestore, 'schools', profileData.schoolId));
+  const schoolData = schoolSnapshot.data();
+  if (!schoolSnapshot.exists() || !schoolData || !isSchoolProfileData(schoolData)) {
+    throw new Error('Your school workspace could not be found. Please contact an administrator.');
+  }
+
+  return {
+    profile: { uid: refreshedSnapshot.id, ...profileData },
+    school: { id: schoolSnapshot.id, ...schoolData },
+  };
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [school, setSchool] = useState<SchoolProfile | null>(null);
-  const [needsSetup, setNeedsSetup] = useState(false);
   const [loading, setLoading] = useState(true);
   const [profileError, setProfileError] = useState<string | null>(null);
 
@@ -55,7 +87,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(nextUser);
       setProfile(null);
       setSchool(null);
-      setNeedsSetup(false);
       setProfileError(null);
 
       if (!nextUser) {
@@ -63,33 +94,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      if (!firestore) {
-        setProfileError('Your account could not be loaded because Firebase is not configured.');
-        setLoading(false);
-        return;
-      }
-
       try {
-        const profileSnapshot = await getDoc(doc(firestore, 'users', nextUser.uid));
-        if (!profileSnapshot.exists()) {
-          setNeedsSetup(true);
-        } else {
-          const profileData = profileSnapshot.data();
-          if (!isUserProfileData(profileData)) {
-            setProfileError('Your school access profile is incomplete or inactive. Please contact an administrator.');
-          } else {
-            const schoolSnapshot = await getDoc(doc(firestore, 'schools', profileData.schoolId));
-            const schoolData = schoolSnapshot.data();
-            if (!schoolSnapshot.exists() || !schoolData || !isSchoolProfileData(schoolData)) {
-              setProfileError('Your school workspace could not be found. Please contact an administrator.');
-            } else {
-              setProfile({ uid: profileSnapshot.id, ...profileData });
-              setSchool({ id: schoolSnapshot.id, ...schoolData });
-            }
-          }
-        }
-      } catch {
-        setProfileError('Unable to load your school access profile. Please try again.');
+        const result = await loadSchoolAndProfile(nextUser);
+        setProfile(result.profile);
+        setSchool(result.school);
+      } catch (error) {
+        setProfileError(error instanceof Error ? error.message : 'Unable to load your school workspace.');
       } finally {
         setLoading(false);
       }
@@ -100,7 +110,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     user,
     profile,
     school,
-    needsSetup,
     loading,
     configError: firebaseConfigError,
     profileError,
@@ -117,8 +126,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     signOutUser: async () => {
       if (firebaseAuth) await signOut(firebaseAuth);
     },
-  }), [loading, needsSetup, profile, profileError, school, user]);
+  }), [loading, profile, profileError, school, user]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
-

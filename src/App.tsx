@@ -2,7 +2,6 @@ import { useState, type ReactNode } from 'react';
 import { useAuth } from '@/auth/AuthContext';
 import type { SchoolProfile, UserProfile } from '@/auth/AuthContext';
 import { DashboardPage } from '@/pages/DashboardPage';
-import { InitialSetupPage } from '@/pages/InitialSetupPage';
 import { LoginPage } from '@/pages/LoginPage';
 import { StudentDirectory } from '@/pages/StudentDirectory';
 import { StudentRegistrationPage } from '@/pages/StudentRegistrationPage';
@@ -58,12 +57,11 @@ const navItems: NavItem[] = [
 ];
 
 function App() {
-  const { user, profile, school, needsSetup, loading, profileError, configError, signOutUser } = useAuth();
+  const { user, profile, school, loading, profileError, configError, signOutUser } = useAuth();
 
   if (loading) return <AuthLoading />;
   if (!user) return <LoginPage />;
   if (configError) return <AccessDenied message={configError} onSignOut={signOutUser} />;
-  if (needsSetup) return <InitialSetupPage />;
   if (profileError || !profile || !school) return <AccessDenied message={profileError ?? 'Your school workspace is unavailable.'} onSignOut={signOutUser} />;
   return <Dashboard profile={profile} school={school} onSignOut={signOutUser} />;
 }

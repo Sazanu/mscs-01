@@ -62,14 +62,14 @@ service cloud.firestore {
     }
 
     // ─── First-time provisioning ──────────────────────────────
-    // Allows the first verified user to create the fixed
+    // Allows the first signed-in user to create the fixed
     // schools/mary-candyland document and their own users/{uid}
     // admin profile in a single atomic transaction.
     // getAfter() validates the post-transaction state of the
     // paired document so neither can be created alone.
 
     function isInitialSchoolCreate(schoolId) {
-      return emailVerified()
+      return signedIn()
         && schoolId == 'mary-candyland'
         && !exists(/databases/$(database)/documents/schools/mary-candyland)
         && !exists(/databases/$(database)/documents/users/$(request.auth.uid))
@@ -86,7 +86,7 @@ service cloud.firestore {
     }
 
     function isInitialUserCreate(uid) {
-      return emailVerified()
+      return signedIn()
         && uid == request.auth.uid
         && !exists(/databases/$(database)/documents/users/$(request.auth.uid))
         && !exists(/databases/$(database)/documents/schools/mary-candyland)
