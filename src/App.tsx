@@ -13,6 +13,8 @@ import { ReportsPage } from '@/pages/ReportsPage';
 import { FinancePage } from '@/pages/FinancePage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { UsersPage } from '@/pages/UsersPage';
+import { AnnouncementsPage } from '@/pages/AnnouncementsPage';
+import { MessagesPage } from '@/pages/MessagesPage';
 import {
   ArrowUpRight,
   Bell,
@@ -22,7 +24,11 @@ import {
   ChevronDown,
   GraduationCap,
   LayoutDashboard,
+  LogOut,
+  Mail,
+  Megaphone,
   Menu,
+  MessageSquare,
   MoreHorizontal,
   Search,
   Settings,
@@ -37,7 +43,6 @@ import {
 type NavItem = {
   label: string;
   icon: ReactNode;
-  badge?: string;
 };
 
 type View =
@@ -50,6 +55,8 @@ type View =
   | { name: 'attendance' }
   | { name: 'reports' }
   | { name: 'finance' }
+  | { name: 'announcements' }
+  | { name: 'messages' }
   | { name: 'settings' }
   | { name: 'users' };
 
@@ -60,6 +67,8 @@ const navItems: NavItem[] = [
   { label: 'Attendance', icon: <CalendarDays size={18} /> },
   { label: 'Finance', icon: <WalletCards size={18} /> },
   { label: 'Reports', icon: <ArrowUpRight size={18} /> },
+  { label: 'Announcements', icon: <Megaphone size={18} /> },
+  { label: 'Messages', icon: <MessageSquare size={18} /> },
 ];
 
 function App() {
@@ -84,6 +93,7 @@ function Dashboard({ profile, school, onSignOut }: { profile: UserProfile; schoo
   const [view, setView] = useState<View>({ name: 'dashboard' });
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [notice, setNotice] = useState('');
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
   const showNotice = (message: string) => {
     setNotice(message);
@@ -96,6 +106,8 @@ function Dashboard({ profile, school, onSignOut }: { profile: UserProfile; schoo
     : view.name === 'attendance' ? 'Attendance'
     : view.name === 'reports' ? 'Reports'
     : view.name === 'finance' ? 'Finance'
+    : view.name === 'announcements' ? 'Announcements'
+    : view.name === 'messages' ? 'Messages'
     : view.name === 'settings' ? 'Settings'
     : view.name === 'users' ? 'Users'
     : 'Dashboard';
@@ -107,7 +119,8 @@ function Dashboard({ profile, school, onSignOut }: { profile: UserProfile; schoo
     else if (label === 'Attendance') setView({ name: 'attendance' });
     else if (label === 'Reports') setView({ name: 'reports' });
     else if (label === 'Finance') setView({ name: 'finance' });
-    else showNotice(`${label} module is coming soon.`);
+    else if (label === 'Announcements') setView({ name: 'announcements' });
+    else if (label === 'Messages') setView({ name: 'messages' });
     setIsSidebarOpen(false);
   };
 
@@ -152,6 +165,10 @@ function Dashboard({ profile, school, onSignOut }: { profile: UserProfile; schoo
         return <ReportsPage />;
       case 'finance':
         return <FinancePage />;
+      case 'announcements':
+        return <AnnouncementsPage />;
+      case 'messages':
+        return <MessagesPage />;
       case 'settings':
         return <SettingsPage />;
       case 'users':
@@ -160,6 +177,13 @@ function Dashboard({ profile, school, onSignOut }: { profile: UserProfile; schoo
         return <DashboardPage profile={profile} onAddStudent={() => setView({ name: 'studentRegistration' })} />;
     }
   };
+
+  const initials = profile.displayName.slice(0, 2).toUpperCase();
+  const roleLabel = profile.role === 'superAdmin' ? 'Super Admin'
+    : profile.role === 'admin' ? 'Administrator'
+    : profile.role === 'teacher' ? 'Teacher'
+    : profile.role === 'parent' ? 'Parent'
+    : 'Student';
 
   return (
     <div className="app-shell">
@@ -196,7 +220,11 @@ function Dashboard({ profile, school, onSignOut }: { profile: UserProfile; schoo
 
         <div className="sidebar-footer">
           <div className="help-card"><Sparkles size={18} /><div><strong>Need a hand?</strong><span>Visit the help center</span></div><ArrowUpRight size={16} /></div>
-          <button className="profile-row profile-button" onClick={() => void onSignOut()} title="Sign out"><div className="profile-avatar">{profile.displayName.slice(0, 2).toUpperCase()}</div><div className="profile-copy"><strong>{profile.displayName}</strong><span>{profile.role}</span></div><MoreHorizontal size={18} /></button>
+          <div className="profile-row">
+            <div className="profile-avatar">{initials}</div>
+            <div className="profile-copy"><strong>{profile.displayName}</strong><span>{roleLabel}</span></div>
+            <button className="logout-icon-btn" title="Sign out" onClick={() => setShowLogoutConfirm(true)}><LogOut size={16} /></button>
+          </div>
         </div>
       </aside>
 
@@ -204,14 +232,33 @@ function Dashboard({ profile, school, onSignOut }: { profile: UserProfile; schoo
         <header className="topbar">
           <button className="menu-button" onClick={() => setIsSidebarOpen(true)} aria-label="Open navigation"><Menu size={21} /></button>
           <div className="breadcrumb"><span>Mary Candyland</span><span className="breadcrumb-separator">/</span><strong>{activeNav}</strong></div>
-          <div className="topbar-actions"><button className="icon-button search-button" aria-label="Search"><Search size={19} /></button><button className="icon-button notification-button" aria-label="Notifications" onClick={() => showNotice('You are all caught up.')}><Bell size={19} /><i /></button><div className="topbar-profile"><div className="profile-avatar small">{profile.displayName.slice(0, 2).toUpperCase()}</div><ChevronDown size={15} /></div></div>
+          <div className="topbar-actions">
+            <button className="icon-button search-button" aria-label="Search"><Search size={19} /></button>
+            <button className="icon-button notification-button" aria-label="Notifications" onClick={() => setView({ name: 'announcements' })}><Bell size={19} /><i /></button>
+            <button className="icon-button" aria-label="Messages" onClick={() => setView({ name: 'messages' })}><Mail size={19} /></button>
+            <div className="topbar-profile"><div className="profile-avatar small">{initials}</div><ChevronDown size={15} /></div>
+          </div>
         </header>
 
         <div className="content-wrap">
           {renderContent()}
         </div>
       </main>
+
       {notice && <div className="toast"><Check size={17} />{notice}</div>}
+
+      {showLogoutConfirm && (
+        <div className="modal-overlay" onClick={() => setShowLogoutConfirm(false)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <h2>Sign out?</h2>
+            <p>You will be returned to the sign-in screen.</p>
+            <div className="modal-actions"><div /><div>
+              <button className="secondary-button" onClick={() => setShowLogoutConfirm(false)}>Cancel</button>
+              <button className="primary-button" onClick={() => void onSignOut()}><LogOut size={16} /> Sign out</button>
+            </div></div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -281,3 +281,38 @@ h2 { margin: 0; font-size: 18px; line-height: 1.2; }
 .finance-item-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .finance-item-row .student-input { flex: 1; }
 .finance-item-row .checkbox-field { flex: 0 0 auto; white-space: nowrap; }
+
+/* ─── Announcements ───────────────────────────────────────────── */
+.announcement-list { display: flex; flex-direction: column; gap: 14px; max-width: 760px; }
+.announcement-card { border: 1px solid #e9edf3; border-radius: 12px; background: #fff; box-shadow: 0 3px 14px #2b3f6210; padding: 20px; }
+.announcement-header { display: flex; align-items: flex-start; gap: 12px; }
+.announcement-priority { display: grid; place-items: center; width: 32px; height: 32px; flex: 0 0 32px; border-radius: 8px; }
+.announcement-copy { flex: 1; min-width: 0; }
+.announcement-copy h3 { margin: 0 0 4px; font-size: 15px; font-family: 'Space Grotesk', sans-serif; letter-spacing: -.02em; color: #1e2c43; }
+.announcement-copy span { color: #99a5b4; font-size: 11px; }
+.announcement-body { margin: 14px 0 0; color: #405067; font-size: 13px; line-height: 1.6; white-space: pre-wrap; }
+
+/* ─── Messages ────────────────────────────────────────────────── */
+.nav-badge { margin-left: auto; padding: 1px 7px; border-radius: 20px; color: #fff; background: #dc6b5f; font-size: 10px; font-style: normal; font-weight: 700; }
+.message-list { display: flex; flex-direction: column; gap: 8px; max-width: 720px; }
+.message-row { display: flex; align-items: flex-start; gap: 12px; width: 100%; padding: 14px 16px; border: 1px solid #e9edf3; border-radius: 10px; background: #fff; text-align: left; transition: .15s ease; box-shadow: 0 2px 8px #2b3f6210; }
+.message-row:hover { border-color: #c5d0dd; background: #f9fafd; }
+.message-unread { border-left: 3px solid #2864b5; background: #f7faff; }
+.message-icon { display: grid; place-items: center; width: 36px; height: 36px; flex: 0 0 36px; border-radius: 8px; color: #2864b5; background: #eef4fc; }
+.message-unread .message-icon { color: #2864b5; background: #e0ecfa; }
+.message-copy { flex: 1; min-width: 0; }
+.message-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.message-top strong { color: #1e2c43; font-size: 13px; }
+.message-top time { color: #a1aab7; font-size: 10px; white-space: nowrap; }
+.message-copy span { display: block; margin: 3px 0 4px; color: #344258; font-size: 12px; font-weight: 600; }
+.message-copy p { margin: 0; color: #8794a7; font-size: 11px; line-height: 1.4; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.modal-header-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.modal-header-row h2 { margin: 0; }
+
+/* ─── Logout button in sidebar ────────────────────────────────── */
+.logout-icon-btn { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; color: #7285a0; background: transparent; transition: .15s ease; }
+.logout-icon-btn:hover { color: #fff; background: #243552; }
+
+/* ─── Dashboard extras ────────────────────────────────────────── */
+.attendance-rate-badge { display: flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 20px; color: #238c70; background: #e0f4ed; font-size: 11px; font-weight: 700; }
+.attendance-rate-badge svg { color: #238c70; }

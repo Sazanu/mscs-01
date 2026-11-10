@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut, type User } from 'firebase/auth';
-import { AuthContext, type AuthContextValue, type SchoolProfile } from '@/auth/AuthContext';
-import { firebaseAuth, firebaseConfigError } from '@/lib/firebase';
+import { collection, getDocs, query, where, limit } from 'firebase/firestore';
+import { AuthContext, type AuthContextValue, type SchoolProfile, type UserProfile, type UserRole } from '@/auth/AuthContext';
+import { firebaseAuth, firestore, firebaseConfigError } from '@/lib/firebase';
 import { findMaryCandylandSchool } from '@/data/schoolService';
 
 function getAuthErrorMessage(error: unknown): string {
@@ -22,8 +23,75 @@ function getAuthErrorMessage(error: unknown): string {
   return 'Unable to sign in right now. Please try again.';
 }
 
+async function fetchUserProfile(uid: string, email: string, schoolId: string): Promise<UserProfile> {
+  if (!firestore) {
+    return {
+      uid,
+      schoolId,
+      displayName: email.split('@')[0],
+      email,
+      role: 'admin',
+      active: true,
+    };
+  }
+
+  const q = query(
+    collection(firestore, 'users'),
+    where('uid', '==', uid),
+    limit(1),
+  );
+  const snap = await getDocs(q);
+
+  if (!snap.empty) {
+    const data = snap.docs[0].data();
+    return {
+      uid,
+      schoolId,
+      displayName: data.displayName ?? email.split('@')[0],
+      email: data.email ?? email,
+      role: (data.role as UserRole) ?? 'admin',
+      active: data.active ?? true,
+      linkedStudentIds: data.linkedStudentIds,
+      linkedParentId: data.linkedParentId,
+      linkedTeacherId: data.linkedTeacherId,
+    };
+  }
+
+  const emailQuery = query(
+    collection(firestore, 'users'),
+    where('email', '==', email),
+    limit(1),
+  );
+  const emailSnap = await getDocs(emailQuery);
+
+  if (!emailSnap.empty) {
+    const data = emailSnap.docs[0].data();
+    return {
+      uid,
+      schoolId,
+      displayName: data.displayName ?? email.split('@')[0],
+      email: data.email ?? email,
+      role: (data.role as UserRole) ?? 'admin',
+      active: data.active ?? true,
+      linkedStudentIds: data.linkedStudentIds,
+      linkedParentId: data.linkedParentId,
+      linkedTeacherId: data.linkedTeacherId,
+    };
+  }
+
+  return {
+    uid,
+    schoolId,
+    displayName: email.split('@')[0],
+    email,
+    role: 'admin',
+    active: true,
+  };
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
   const [school, setSchool] = useState<SchoolProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [profileError, setProfileError] = useState<string | null>(null);
@@ -37,6 +105,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return onAuthStateChanged(firebaseAuth, async (nextUser) => {
       setUser(nextUser);
       setSchool(null);
+      setProfile(null);
       setProfileError(null);
 
       if (!nextUser) {
@@ -48,11 +117,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const found = await findMaryCandylandSchool();
         if (!found) {
           setProfileError('The Mary Candyland School record could not be found in the database. Please contact the system owner.');
-        } else {
-          setSchool(found);
+          setLoading(false);
+          return;
         }
+        setSchool(found);
+        const userProfile = await fetchUserProfile(nextUser.uid, nextUser.email ?? '', found.id);
+        setProfile(userProfile);
       } catch {
-        setProfileError('Unable to load the Mary Candyland School workspace. Please try again.');
+        setProfileError('Unable to load your school workspace. Please try again.');
       } finally {
         setLoading(false);
       }
@@ -61,14 +133,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<AuthContextValue>(() => ({
     user,
-    profile: school ? {
-      uid: user?.uid ?? '',
-      schoolId: school.id,
-      displayName: user?.displayName ?? user?.email ?? 'Administrator',
-      email: user?.email ?? '',
-      role: 'admin',
-      active: true,
-    } : null,
+    profile,
     school,
     loading,
     configError: firebaseConfigError,
@@ -86,7 +151,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     signOutUser: async () => {
       if (firebaseAuth) await signOut(firebaseAuth);
     },
-  }), [loading, profileError, school, user]);
+  }), [loading, profileError, school, user, profile]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
